@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Blocks secrets, generated files, conflict markers, trailing whitespace,
+# and Python syntax errors before a commit is created.
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACM)
+if (( ${#staged[@]} == 0 )); then
+  exit 0
+fi
+
+fail=0
+
+for file in "${staged[@]}"; do
+  base=$(basename "$file")
+  case "$base" in
+    .env|.env.*|id_rsa|id_ed25519|*.pem|*.key|credentials.json)
+      echo "pre-commit: refusing secret file: $file"
+      fail=1
+      ;;
+  esac
+  case "$file" in
+    *__pycache__/*|*.pyc|.lgd-nfy*)
+      echo "pre-commit: refusing generated file: $file"
+      fail=1
+      ;;
+  esac
+
+  if [[ -e "$file" && ! -f "$file" ]]; then
+    echo "pre-commit: refusing non-regular file: $file"
+    fail=1
+    continue
+  fi
+  [[ -f "$file" ]] || continue
+
+  size=$(stat -c%s "$file")
+  if (( size > 1048576 )); then
+    echo "pre-commit: file exceeds 1 MiB: $file ($size bytes)"
+    fail=1
+  fi
+
+  # -I skips binary files such as the dashboard screenshot.
+  if grep -nIE '^(<<<<<<<|=======|>>>>>>>)' "$file" >/dev/null 2>&1; then
+    echo "pre-commit: merge conflict marker in $file"
+    fail=1
+  fi
+
+  if grep -nIE '[[:space:]]+$' "$file" >/dev/null 2>&1; then
+    echo "pre-commit: trailing whitespace in $file"
+    grep -nIE '[[:space:]]+$' "$file" | head -5
+    fail=1
+  fi
+done
+
+py_files=()
+for file in "${staged[@]}"; do
+  [[ -f "$file" && "$file" == *.py ]] && py_files+=("$file")
+done
+
+if (( ${#py_files[@]} > 0 )); then
+  if ! python3 -m py_compile "${py_files[@]}"; then
+    echo "pre-commit: Python syntax check failed"
+    fail=1
+  fi
+fi
+
+if (( fail != 0 )); then
+  echo "pre-commit: commit blocked."
+  exit 1
+fi
+
+echo "pre-commit: checks passed"
+exit 0

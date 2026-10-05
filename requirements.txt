@@ -1,0 +1,5 @@
+adafruit-blinka
+adafruit-circuitpython-servokit
+lgpio
+fastapi
+uvicorn[standard]

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Require a Conventional Commit message via Commitizen.
+set -euo pipefail
+
+if ! command -v cz >/dev/null 2>&1; then
+  echo "commit-msg: cz is not on PATH. Activate ~/servo-env or install commitizen."
+  exit 1
+fi
+
+cz check --commit-msg-file "$1"
